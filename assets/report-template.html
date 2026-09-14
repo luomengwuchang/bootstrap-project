@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!--
+  这是一次性报告页，不是活文档。设计前提：钉死时间点，不再更新。
+  所以页头必须保留生成日期，读者才知道自己在看哪个时刻的状态。
+
+  填写方式：
+    1. 按用户需要的语言填写内容；将 <title> 改为简短、具体的标题，
+       让读者能在多个页面中识别这份报告。
+    2. 逐节替换 {{...}} 与 待补充；用不到的整节直接删掉。
+    3. 组件用法见下方每个 section 前的注释。
+    4. 所有数值尽量来自实测，不要写估算值；估算就标明是估算。
+
+  ⚠️ 绝对不要写进这个文件：
+     密码、API key、token、cookie、私有 URL、完整敏感数据。
+     HTML 比仓库里的 markdown 更容易被转发和贴成链接——
+     写「凭据在 xxx，用 yyy 取回」，不要写凭据本身。
+
+  样式系统已固定，不要每次重新设计：
+     颜色全部走 CSS 变量，默认亮色，随系统偏好自动切换暗色。
+     页面没有手动主题开关。新增颜色变量应同时提供亮色和暗色取值。
+-->
+  <title>{{TITLE}}</title>
+
+<style>
+  /* ── 令牌：亮色是基准，系统暗色只重定义变量 ── */
+  :root {
+    --paper:#F6F7F9; --surface:#FFFFFF; --sunk:#EEF1F4;
+    --ink:#101720; --muted:#5C6873; --faint:#8A96A1;
+    --line:#DCE2E8; --line-2:#C6CFD8;
+    --accent:#1D5B63; --accent-w:#E2EEEE;
+    --ok:#2E7D5B;  --ok-w:#E3F1EA;
+    --warn:#A96A0C; --warn-w:#F6EDDC;
+    --crit:#A93B2B; --crit-w:#F7E6E3;
+    --shadow:0 1px 2px rgba(16,23,32,.05), 0 4px 14px rgba(16,23,32,.045);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:#0D1317; --surface:#151D23; --sunk:#1B242B;
+      --ink:#E6ECF1; --muted:#97A4AF; --faint:#6D7C88;
+      --line:#26313A; --line-2:#35434E;
+      --accent:#63B6B0; --accent-w:#15302F;
+      --ok:#59BA8B;  --ok-w:#142C22;
+      --warn:#D69B45; --warn-w:#2E2416;
+      --crit:#E27866; --crit-w:#331C18;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25);
+    }
+  }
+
+  *,*::before,*::after { box-sizing:border-box; }
+
+  body {
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:16px; line-height:1.65; -webkit-font-smoothing:antialiased;
+  }
+  .wrap {
+    max-width:1000px; margin:0 auto;
+    padding:clamp(28px,5vw,68px) clamp(18px,4vw,40px) 96px;
+    display:flex; flex-direction:column; gap:52px;
+  }
+
+  h1,h2,h3 {
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    text-wrap:balance; margin:0; letter-spacing:-0.01em;
+  }
+  h1 { font-size:clamp(34px,5.5vw,50px); font-weight:700; line-height:1.08; }
+  h2 { font-size:clamp(23px,3vw,29px); font-weight:700; line-height:1.2; }
+  h3 { font-size:17px; font-weight:600; line-height:1.35; }
+  p  { margin:0; max-width:68ch; }
+  .lede { font-size:17.5px; color:var(--muted); }
+
+  code,.mono,td.num,.tile-v {
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Microsoft YaHei",monospace;
+    font-variant-numeric:tabular-nums;
+  }
+  code {
+    font-size:.875em; background:var(--sunk); border:1px solid var(--line);
+    border-radius:4px; padding:.09em .38em; word-break:break-word;
+  }
+  .eyebrow {
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Microsoft YaHei",monospace; font-size:11.5px; font-weight:500;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--faint);
+  }
+
+  header { display:flex; flex-direction:column; gap:18px; }
+  .status-line {
+    display:inline-flex; align-items:center; gap:9px; align-self:flex-start;
+    background:var(--ok-w); color:var(--ok);
+    border:1px solid color-mix(in srgb,var(--ok) 32%,transparent);
+    border-radius:999px; padding:5px 14px 5px 11px; font-size:13.5px; font-weight:600;
+  }
+  .status-line.is-warn { background:var(--warn-w); color:var(--warn);
+    border-color:color-mix(in srgb,var(--warn) 32%,transparent); }
+  .status-line.is-crit { background:var(--crit-w); color:var(--crit);
+    border-color:color-mix(in srgb,var(--crit) 32%,transparent); }
+  .dot { width:7px; height:7px; border-radius:50%; background:currentColor; flex:none; }
+
+  .meta {
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(184px,1fr)); gap:1px;
+    background:var(--line); border:1px solid var(--line); border-radius:10px; overflow:hidden;
+  }
+  .meta div { background:var(--surface); padding:13px 16px; display:flex; flex-direction:column; gap:3px; }
+  .meta dt { font-size:11.5px; letter-spacing:.1em; text-transform:uppercase;
+             color:var(--faint); font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Microsoft YaHei",monospace; }
+  .meta dd { margin:0; font-size:14.5px; font-weight:500; word-break:break-all;
+             font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Microsoft YaHei",monospace; }
+
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(158px,1fr)); gap:12px; }
+  .tile {
+    background:var(--surface); border:1px solid var(--line); border-radius:10px;
+    padding:15px 16px 14px; display:flex; flex-direction:column; gap:5px;
+    box-shadow:var(--shadow); border-top:2px solid var(--accent);
+  }
+  .tile.is-ok { border-top-color:var(--ok); }
+  .tile.is-warn { border-top-color:var(--warn); }
+  .tile.is-crit { border-top-color:var(--crit); }
+  .tile-k { font-size:12px; color:var(--muted); font-weight:500; }
+  .tile-v { font-size:26px; font-weight:600; line-height:1.1; letter-spacing:-.02em; }
+  .tile-n { font-size:11.5px; color:var(--faint); }
+
+  section { display:flex; flex-direction:column; gap:18px; }
+  .sec-head { display:flex; flex-direction:column; gap:6px;
+              border-bottom:1px solid var(--line-2); padding-bottom:12px; }
+
+  .scroll { overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--surface); }
+  table { border-collapse:collapse; width:100%; font-size:14.5px; min-width:520px; }
+  th,td { text-align:left; padding:11px 15px; border-bottom:1px solid var(--line); vertical-align:top; }
+  thead th {
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Microsoft YaHei",monospace; font-size:11.5px; font-weight:600;
+    letter-spacing:.09em; text-transform:uppercase; color:var(--faint);
+    background:var(--sunk); white-space:nowrap;
+  }
+  tbody tr:last-child td { border-bottom:none; }
+  td.num { text-align:right; white-space:nowrap; }
+  td.k { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Microsoft YaHei",monospace; font-size:13.5px; white-space:nowrap; }
+
+  .chip {
+    display:inline-block; white-space:nowrap; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Microsoft YaHei",monospace;
+    font-size:11px; font-weight:600; letter-spacing:.05em;
+    padding:2px 8px; border-radius:5px; border:1px solid transparent;
+  }
+  .c-ok   { background:var(--ok-w);     color:var(--ok);     border-color:color-mix(in srgb,var(--ok) 30%,transparent); }
+  .c-warn { background:var(--warn-w);   color:var(--warn);   border-color:color-mix(in srgb,var(--warn) 30%,transparent); }
+  .c-crit { background:var(--crit-w);   color:var(--crit);   border-color:color-mix(in srgb,var(--crit) 30%,transparent); }
+  .c-info { background:var(--accent-w); color:var(--accent); border-color:color-mix(in srgb,var(--accent) 30%,transparent); }
+
+  .finds { display:flex; flex-direction:column; gap:10px; counter-reset:f; }
+  .find {
+    background:var(--surface); border:1px solid var(--line); border-radius:10px;
+    padding:15px 18px 16px 16px; display:grid; grid-template-columns:30px 1fr;
+    gap:4px 13px; border-left:3px solid var(--line-2);
+  }
+  .find.sev-hi  { border-left-color:var(--crit); }
+  .find.sev-md  { border-left-color:var(--warn); }
+  .find.sev-dec { border-left-color:var(--accent); }
+  .find::before {
+    counter-increment:f; content:counter(f,decimal-leading-zero);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Microsoft YaHei",monospace; font-size:12px; font-weight:600;
+    color:var(--faint); padding-top:3px; grid-row:span 2;
+  }
+  .find-t { display:flex; flex-wrap:wrap; align-items:baseline; gap:9px; }
+  .find-t h3 { font-size:16.5px; }
+  .find p { font-size:14.5px; color:var(--muted); max-width:74ch; }
+  .find p strong { color:var(--ink); font-weight:600; }
+
+  .note {
+    border:1px solid var(--line); border-left:3px solid var(--accent);
+    background:var(--surface); border-radius:10px; padding:15px 18px;
+    display:flex; flex-direction:column; gap:7px;
+  }
+  .note.warn { border-left-color:var(--warn); }
+  .note.crit { border-left-color:var(--crit); }
+  .note h3 { font-size:15.5px; }
+  .note p { font-size:14.5px; color:var(--muted); }
+
+  .todo { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:1px;
+          background:var(--line); border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .todo li { background:var(--surface); padding:14px 17px; display:flex; gap:13px; align-items:flex-start; }
+  .box { width:15px; height:15px; border:1.5px solid var(--line-2); border-radius:3.5px; margin-top:4px; flex:none; }
+  .todo-b { display:flex; flex-direction:column; gap:3px; }
+  .todo-b b { font-weight:600; font-size:15px; }
+  .todo-b span { font-size:14px; color:var(--muted); max-width:70ch; }
+
+  pre {
+    margin:0; background:var(--sunk); border:1px solid var(--line); border-radius:10px;
+    padding:14px 16px; overflow-x:auto; font-size:13.5px; line-height:1.7;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Microsoft YaHei",monospace;
+  }
+  pre code { background:none; border:none; padding:0; font-size:inherit; }
+  .cmt { color:var(--faint); }
+
+  figure { margin:0; display:flex; flex-direction:column; gap:11px; }
+  .figbox { background:var(--surface); border:1px solid var(--line); border-radius:10px;
+            padding:20px 18px; overflow-x:auto; }
+  figure svg { display:block; max-width:100%; height:auto; margin:0 auto; color:var(--ink); }
+  figcaption { font-size:13.5px; color:var(--muted); max-width:74ch; }
+  /* 图形元素统一走令牌，保证两种主题都可读 */
+  .dg-box   { fill:var(--sunk);     stroke:var(--line-2); stroke-width:1.25; }
+  .dg-inner { fill:var(--surface);  stroke:var(--line-2); stroke-width:1.25; }
+  .dg-hi    { fill:var(--accent-w); stroke:var(--accent); stroke-width:1.5; }
+  .dg-t { fill:currentColor; font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; font-size:13px; font-weight:600; }
+  .dg-s { fill:var(--muted);  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Microsoft YaHei",monospace; font-size:11px; }
+  .dg-m { fill:var(--accent); font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Microsoft YaHei",monospace; font-size:11.5px; font-weight:500; }
+  .dg-x { fill:var(--crit);   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Microsoft YaHei",monospace; font-size:11px; }
+  .dg-ln   { stroke:currentColor; stroke-width:1.5; fill:none; }
+  .dg-dash { stroke:var(--accent); stroke-width:1.5; fill:none; stroke-dasharray:5 4; }
+
+  footer { border-top:1px solid var(--line-2); padding-top:18px; color:var(--faint); font-size:13px; }
+  a { color:var(--accent); text-underline-offset:3px; }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
+  @media (prefers-reduced-motion:reduce) { * { animation:none !important; transition:none !important; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <!-- ══ 页头 ══ 状态徽标用 is-warn / is-crit 切换语义色 -->
+  <header>
+    <div class="eyebrow">{{KIND}} · {{DATE}}</div>
+    <h1>{{TITLE}}</h1>
+    <p class="lede">待补充 —— 两三句话说清：做了什么、当前处于什么状态、还差什么。</p>
+    <div class="status-line"><span class="dot"></span>待补充 —— 一句话结论</div>
+
+    <dl class="meta">
+      <div><dt>项目</dt><dd>{{PROJECT}}</dd></div>
+      <div><dt>待补充</dt><dd>待补充</dd></div>
+      <div><dt>待补充</dt><dd>待补充</dd></div>
+      <div><dt>待补充</dt><dd>待补充</dd></div>
+    </dl>
+  </header>
+
+  <!-- ══ 指标卡 ══ 只放读者要扫一眼的关键数字（3~5 个）。
+       用 is-warn / is-crit 让需要注意的那张自己跳出来。删掉整节也可以。 -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">现状</div>
+      <h2>待补充</h2>
+    </div>
+    <div class="tiles">
+      <div class="tile is-ok">
+        <div class="tile-k">待补充</div>
+        <div class="tile-v">待补充</div>
+        <div class="tile-n">待补充</div>
+      </div>
+      <div class="tile is-warn">
+        <div class="tile-k">待补充</div>
+        <div class="tile-v">待补充</div>
+        <div class="tile-n">待补充</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 机制图（可选）══
+       只在「一句话说不清、读者得自己在脑子里拼装」时才画：
+       数据往哪流、哪两个组件在通信、两个方案差在哪一条边、请求经过哪些状态。
+       一句话能讲完就写那句话，别画图。
+       箭头一定要标签：`写入` `失效` `每 30s 轮询` 才是信息，裸箭头等于「有点关系」。
+       用不到就整节删掉。 -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">待补充</div>
+      <h2>待补充</h2>
+    </div>
+    <figure>
+      <div class="figbox">
+        <svg viewBox="0 0 640 200" role="img" aria-label="待补充 —— 用一句话说明这张图证明了什么，供读屏用户">
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <rect class="dg-box" x="20" y="70" width="150" height="60" rx="8"/>
+          <text class="dg-t" x="95" y="97" text-anchor="middle">待补充</text>
+          <text class="dg-s" x="95" y="115" text-anchor="middle">待补充</text>
+
+          <line class="dg-ln" x1="172" y1="100" x2="242" y2="100" marker-end="url(#ah)"/>
+          <text class="dg-s" x="207" y="90" text-anchor="middle">标注动作</text>
+
+          <rect class="dg-hi" x="244" y="70" width="150" height="60" rx="8"/>
+          <text class="dg-t" x="319" y="97" text-anchor="middle">待补充</text>
+          <text class="dg-m" x="319" y="115" text-anchor="middle">重点在这里</text>
+
+          <line class="dg-ln" x1="396" y1="100" x2="466" y2="100" marker-end="url(#ah)"/>
+          <text class="dg-s" x="431" y="90" text-anchor="middle">标注动作</text>
+
+          <rect class="dg-box" x="468" y="70" width="150" height="60" rx="8"/>
+          <text class="dg-t" x="543" y="97" text-anchor="middle">待补充</text>
+          <text class="dg-s" x="543" y="115" text-anchor="middle">待补充</text>
+        </svg>
+      </div>
+      <figcaption>待补充 —— 说明这张图展示的是什么机制，一个论点。解释性长句放这里，不要塞进图里。</figcaption>
+    </figure>
+  </section>
+
+  <!-- ══ 表格 ══ 配置、清单、对照。
+       数字列加 class="num"（右对齐 + 等宽数字），标识符列加 class="k"。 -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">待补充</div>
+      <h2>待补充</h2>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>项</th><th class="num">值</th><th>为什么这么设</th></tr></thead>
+        <tbody>
+          <tr><td class="k">待补充</td><td class="num k">待补充</td><td>待补充</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══ 发现 / 偏差 ══ 报告里价值最高的一节。
+       写「实际与预期不符的地方」，不是流水账。
+       色条：sev-hi 会导致静默失效或安全问题 / sev-md 影响行为但不致命 / sev-dec 取舍变更。
+       编号是自动的（CSS counter），因为这是一份清单不是流程——
+       如果内容其实是有先后的步骤，改用别的结构。 -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">待补充</div>
+      <h2>待补充</h2>
+    </div>
+    <div class="finds">
+      <div class="find sev-hi">
+        <div class="find-t"><h3>待补充</h3><span class="chip c-crit">高</span></div>
+        <p>待补充 —— 说清楚：观察到什么、为什么是问题、怎么处理的。用 <strong>strong</strong> 强调关键结论。</p>
+      </div>
+      <div class="find sev-md">
+        <div class="find-t"><h3>待补充</h3><span class="chip c-warn">中</span></div>
+        <p>待补充</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 验证 ══ 明确区分「验了」和「没验」。
+       没验的不要含糊带过——写清楚为什么验不了、谁来验。 -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">验证</div>
+      <h2>验了什么，没验什么</h2>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>检查</th><th>结果</th><th>状态</th></tr></thead>
+        <tbody>
+          <tr><td>待补充</td><td>待补充</td><td><span class="chip c-ok">通过</span></td></tr>
+          <tr><td>待补充</td><td>待补充</td><td><span class="chip c-warn">待实测</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══ 待办 ══ 需要人去做的事。每条写清「做什么」+「怎么判断做成了」。 -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">待办</div>
+      <h2>还需要做的</h2>
+    </div>
+    <ul class="todo">
+      <li><span class="box"></span><span class="todo-b"><b>待补充</b><span>待补充 —— 包括怎么确认这条做完了。</span></span></li>
+    </ul>
+  </section>
+
+  <!-- ══ 操作参考 ══ 命令与路径。
+       ⚠️ 这里最容易手滑写进密钥——只写取回方式，不写凭据本身。 -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">参考</div>
+      <h2>日常操作</h2>
+    </div>
+    <div class="note">
+      <h3>凭据不写进本文档</h3>
+      <p>本页可被转发，不适合放生产密码。写明凭据存放位置与取回方式即可。</p>
+    </div>
+    <pre><code><span class="cmt"># 待补充</span>
+待补充</code></pre>
+  </section>
+
+  <footer>
+    生成于 {{DATE}}。本页是时间点快照，不随项目更新——需要当前状态请重新生成。
+  </footer>
+
+</div>
+</body>
+</html>

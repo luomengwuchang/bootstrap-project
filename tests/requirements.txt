@@ -1,0 +1,2 @@
+# Test-only dependency for parsing skill frontmatter; the CLI uses the standard library.
+PyYAML>=6.0,<7
