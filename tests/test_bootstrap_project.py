@@ -800,6 +800,29 @@ class BootstrapProjectTests(unittest.TestCase):
             self.assertIn("no_head", codes)
             self.assertEqual(result.exit_code, 1)
 
+    def test_check_strict_detects_untracked_files_hidden_by_git_config(self) -> None:
+        for relative_path in (".untracked.txt", ".untracked/notes.txt"):
+            with self.subTest(path=relative_path), self.temp_path() as root:
+                self.create_healthy_docs(root)
+                self.create_repository(root, commit=True)
+                self.git(root, "config", "status.showUntrackedFiles", "no")
+                arguments = (str(root), "--check", "--check-level", "strict", "--json")
+                clean = self.run_cli(*arguments)
+                self.assertEqual(clean.returncode, 0, clean.stdout)
+
+                untracked = root / relative_path
+                untracked.parent.mkdir(parents=True, exist_ok=True)
+                untracked.write_text("uncommitted notes\n", encoding="utf-8")
+                self.assertEqual(self.git(root, "status", "--porcelain").stdout, "")
+                completed = self.run_cli(*arguments)
+                payload = json.loads(completed.stdout)
+                self.assertEqual(completed.returncode, 1, payload)
+                self.assertEqual(payload["exit_code"], 1)
+                issues = {item["code"] for item in payload["checks"] if item["level"] == "issue"}
+                self.assertEqual(issues, {"dirty_worktree"})
+                self.assertEqual(self.git(root, "config", "status.showUntrackedFiles").stdout.strip(), "no")
+                self.assertEqual(untracked.read_text(encoding="utf-8"), "uncommitted notes\n")
+
     def test_check_strict_summary_counts_blocking_warnings(self) -> None:
         # A warning-only project (structure tree removed) blocks in strict
         # mode; the text summary must not claim "0 issue(s) found" while
@@ -915,10 +938,32 @@ class BootstrapProjectTests(unittest.TestCase):
             self.assertIn("symbolic link", result.errors[0])
 
     def test_cli_rejects_check_level_without_check(self) -> None:
-        completed = self.run_cli("--check-level", "strict", "--json")
-        self.assertEqual(completed.returncode, 2)
-        payload = json.loads(completed.stdout)
-        self.assertIn("only valid with --check", payload["errors"][0])
+        for arguments in (("--check-level", "strict"), ("--check-level=strict",)):
+            with self.subTest(arguments=arguments), self.temp_path() as root:
+                target = root / "new-project"
+                completed = self.run_cli(str(target), *arguments, "--json")
+                self.assertEqual(completed.returncode, 2)
+                payload = json.loads(completed.stdout)
+                self.assertIn("only valid with --check", payload["errors"][0])
+                self.assertFalse(target.exists())
+
+    def test_cli_rejects_abbreviated_options_without_side_effects(self) -> None:
+        for arguments in (
+            ("--check-lev", "strict"), ("--check-lev=strict",),
+            ("--check", "--check-lev", "strict"), ("--check", "--check-lev=strict"),
+            ("--repor=audit",),
+        ):
+            with self.subTest(arguments=arguments), self.temp_path() as root:
+                target = root / "new-project"
+                completed = self.run_cli(str(target), *arguments, "--json")
+                self.assertEqual(completed.returncode, 2, completed.stdout)
+                payload = json.loads(completed.stdout)
+                self.assertEqual(payload["operation"], "arguments")
+                self.assertEqual(payload["exit_code"], 2)
+                self.assertEqual(payload["created"], [])
+                self.assertTrue(payload["errors"])
+                self.assertEqual(completed.stderr, "")
+                self.assertFalse(target.exists())
 
     def test_cli_rejects_conflicting_operations(self) -> None:
         completed = self.run_cli("--check", "--report", "audit", "--json")
@@ -1015,6 +1060,59 @@ class BootstrapProjectTests(unittest.TestCase):
             code, output = self.capture(bootstrap_project.bootstrap, parent_file / "child")
             self.assertEqual(code, 1)
             self.assertIn("error: target parent is not a regular directory", output)
+
+    def test_json_target_creation_failure_does_not_report_planned_files(self) -> None:
+        with self.temp_path() as root:
+            target = root / "new-project"
+            with (
+                mock.patch.object(Path, "mkdir", side_effect=PermissionError("permission denied")),
+                mock.patch.object(sys, "argv", [str(SCRIPT_PATH), str(target), "--json"]),
+            ):
+                code, output = self.capture(bootstrap_project.main)
+            payload = json.loads(output)
+            self.assertEqual(code, 1)
+            self.assertEqual(payload["exit_code"], 1)
+            self.assertEqual(payload["created"], [])
+            self.assertIn("unable to prepare target directory", payload["errors"][0])
+            self.assertFalse(target.exists())
+
+    def test_json_file_inspection_failure_does_not_report_planned_files(self) -> None:
+        with self.temp_path() as root:
+            self.create_repository(root)
+            with (
+                mock.patch.object(bootstrap_project, "write_missing_files", side_effect=PermissionError("permission denied")),
+                mock.patch.object(sys, "argv", [str(SCRIPT_PATH), str(root), "--json"]),
+            ):
+                code, output = self.capture(bootstrap_project.main)
+            payload = json.loads(output)
+            self.assertEqual(code, 1)
+            self.assertEqual(payload["exit_code"], 1)
+            self.assertEqual(payload["created"], [])
+            self.assertIn("unable to inspect or create project files", payload["errors"][0])
+            self.assertFalse(any((root / name).exists() for name in bootstrap_project.DOC_FILES))
+
+    def test_json_partial_write_failure_reports_only_created_files(self) -> None:
+        with self.temp_path() as root:
+            self.create_repository(root)
+            original_open = Path.open
+
+            def fail_plans(path, *args, **kwargs):
+                if path == root / "PLANS.md":
+                    raise PermissionError("permission denied")
+                return original_open(path, *args, **kwargs)
+
+            with (
+                mock.patch.object(Path, "open", fail_plans),
+                mock.patch.object(sys, "argv", [str(SCRIPT_PATH), str(root), "--json"]),
+            ):
+                code, output = self.capture(bootstrap_project.main)
+            payload = json.loads(output)
+            self.assertEqual(code, 1)
+            self.assertEqual(payload["exit_code"], 1)
+            self.assertEqual(set(payload["created"]), {"PROJECT_CONTEXT.md", "README.md", ".gitignore"})
+            self.assertTrue(all((root / name).is_file() for name in payload["created"]))
+            self.assertFalse((root / "PLANS.md").exists())
+            self.assertTrue(any("PLANS.md" in conflict for conflict in payload["conflicts"]))
 
 
 if __name__ == "__main__":

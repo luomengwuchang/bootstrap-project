@@ -786,7 +786,7 @@ def check_result(
                 result.add("missing_file", "issue", name, "strict mode requires complete documentation")
         if git_is_repository:
             try:
-                status = read_git(project_dir, "status", "--porcelain")
+                status = read_git(project_dir, "status", "--porcelain", "--untracked-files=all")
             except OSError as exc:
                 result.add("git_error", "issue", ".git", f"unable to read worktree status: {exc}")
             else:
@@ -1031,6 +1031,9 @@ def bootstrap_result(project_dir: Path, *, mode: str = "minimal", commit: bool =
     result = bootstrap_plan(project_dir, mode=mode, commit=commit, dry_run=dry_run)
     if result.errors or dry_run:
         return result
+    # Planned paths are predictions; real runs report only successful writes,
+    # including when directory preparation or file inspection fails early.
+    result.created.clear()
     try:
         project_dir.mkdir(parents=True, exist_ok=True)
         project_dir = project_dir.resolve()
@@ -1109,7 +1112,8 @@ class ResultArgumentParser(argparse.ArgumentParser):
 
 def parse_args() -> argparse.Namespace:
     parser = ResultArgumentParser(
-        description="Initialize a project with git and starter docs, or health-check existing docs (--check)."
+        description="Initialize a project with git and starter docs, or health-check existing docs (--check).",
+        allow_abbrev=False,
     )
     parser.add_argument(
         "target",

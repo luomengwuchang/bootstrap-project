@@ -43,9 +43,9 @@ when a report is requested; it covers filling, preserving historical reports, an
 - Keep the generated documents brief by default. Replace obvious placeholders only when the project name, purpose, stack, or run commands are already known.
 - Use `--full` only for a more verbose template with extra usage rules and prompts.
 - `--lite` creates only `README.md` and `.gitignore` for small projects. Because existing files are never overwritten, re-running without `--lite` later upgrades in place by adding the missing `PROJECT_CONTEXT.md` and `PLANS.md`.
-- `--check` is read-only and accepts `--check-level basic|standard|strict` (default `standard`). Basic checks paths, UTF-8 readability (with optional BOM), and repository validity; standard also rejects blank Markdown docs and checks placeholders, last-tidy age, structure drift, and HEAD; strict additionally requires all docs, a parseable structure tree, a commit, and a clean worktree. An empty `.gitignore` is valid. Invalid repositories fail at every level; a valid repository without commits is a warning at standard and an issue at strict. Git probes disable optional locks so checks do not refresh the index. Issues return 1; strict also blocks on warnings.
+- `--check` is read-only and accepts `--check-level basic|standard|strict` (default `standard`). Basic checks paths, UTF-8 readability (with optional BOM), and repository validity; standard also rejects blank Markdown docs and checks placeholders, last-tidy age, structure drift, and HEAD; strict additionally requires all docs, a parseable structure tree, a commit, and a clean worktree, including untracked files hidden by Git display settings. An empty `.gitignore` is valid. Invalid repositories fail at every level; a valid repository without commits is a warning at standard and an issue at strict. Git probes disable optional locks so checks do not refresh the index. Issues return 1; strict also blocks on warnings.
 - Check settings: `--stale-days N` changes the default 30-day age limit; `0` disables the age limit but still requires a parseable date. Repeat `--placeholder TEXT` to check additional literal, case-sensitive markers such as `TBD`; the built-in `待补充` marker remains active. These options are check-only; basic skips content and age checks.
-- `--json` makes stdout exactly one UTF-8 JSON object with stable result fields, including errors and `exit_code`.
+- `--json` makes stdout exactly one UTF-8 JSON object with stable result fields, including errors and `exit_code`. Outside dry-run, `created` lists only successfully created files; in dry-run it lists planned files.
 - `--dry-run` plans bootstrap, check, or report without creating directories, initializing Git, writing files, staging, or committing. It may be combined with `--commit` to preview the commit action.
 - `--report` creates only the HTML report (plus `docs/reports/` if missing); it does not touch git or the Markdown docs, and never overwrites an existing report with the same date and slug.
 - Keep secrets out of all generated files. Do not include passwords, API keys, tokens, cookies, private URLs, or full sensitive data.
@@ -90,7 +90,7 @@ To health-check existing project docs (creates nothing):
 python "<skill-dir>/scripts/bootstrap_project.py" "<target-directory>" --check
 ```
 
-Choose a check depth with `--check-level basic|standard|strict` (default: `standard`). Add `--json` when a caller needs one machine-readable object on stdout; add `--dry-run` to preview any operation without filesystem or Git side effects.
+Choose a check depth with `--check-level basic|standard|strict` (default: `standard`). Add `--json` when a caller needs one machine-readable object on stdout; add `--dry-run` to preview any operation without filesystem or Git side effects. Spell long options in full; abbreviations are rejected.
 
 To scaffold a human-facing report page (creates nothing else):
 

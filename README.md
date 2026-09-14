@@ -48,9 +48,9 @@ python scripts/bootstrap_project.py "../demo-project" --check --json
 | 检查 | `TARGET --check` | 只读检查，不自动修复 |
 | 报告 | `TARGET --report handover` | `docs/reports/YYYY-MM-DD-handover.html` |
 
-初始化、检查、报告互斥；`--full`、`--lite`、`--commit` 只适用于初始化。
+初始化、检查、报告互斥；`--full`、`--lite`、`--commit` 只适用于初始化。长参数必须完整拼写，不接受缩写。
 
-`--dry-run` 预览操作，不创建目录、写文件或提交。`--json` 输出一个 UTF-8 JSON 对象，包含操作、创建/跳过/冲突路径、检查项、错误和退出码；预览模式的 `created` 表示计划创建的文件。
+`--dry-run` 预览操作，不创建目录、写文件或提交。`--json` 输出一个 UTF-8 JSON 对象，包含操作、创建/跳过/冲突路径、检查项、错误和退出码；正常执行时 `created` 只包含成功创建的文件，预览模式下表示计划创建的文件。
 
 **模板生成后需要填写。** 直接执行脚本会留下“待补充”，因此立即执行默认检查通常会失败。通过 Agent 使用时，应根据实际信息补齐内容，再运行检查；未知信息保留并说明。
 
@@ -60,7 +60,7 @@ python scripts/bootstrap_project.py "../demo-project" --check --json
 | --- | --- |
 | `basic` | 路径类型、文件可读性与 UTF-8 编码、Git 仓库有效性 |
 | `standard`（默认） | basic，加 Markdown 非空、占位符、整理日期、顶层结构变化和 HEAD 检查 |
-| `strict` | standard，加全部文档齐全、结构树可解析、已有提交、工作区干净；警告也会阻止通过 |
+| `strict` | standard，加全部文档齐全、结构树可解析、已有提交、工作区干净（含未跟踪文件，不受 Git 显示配置影响）；警告也会阻止通过 |
 
 UTF-8 BOM 可以使用，空的 `.gitignore` 也有效。无效编码会明确报错，不会丢弃字节后继续判定文档健康。有效但尚未提交的仓库在 standard 下产生警告，在 strict 下产生问题。
 
