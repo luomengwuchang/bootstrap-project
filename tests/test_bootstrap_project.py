@@ -1093,6 +1093,7 @@ class BootstrapProjectTests(unittest.TestCase):
 
     def test_json_partial_write_failure_reports_only_created_files(self) -> None:
         with self.temp_path() as root:
+            root = root.resolve()
             self.create_repository(root)
             original_open = Path.open
 
