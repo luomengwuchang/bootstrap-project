@@ -120,8 +120,12 @@ class BootstrapProjectTests(unittest.TestCase):
             self.assertEqual(skipped, [])
             self.assertEqual(conflicts, [])
             self.assertIn("## 项目定位", (root / "PROJECT_CONTEXT.md").read_text(encoding="utf-8"))
-            self.assertIn("## 当前计划", (root / "PLANS.md").read_text(encoding="utf-8"))
+            plans = (root / "PLANS.md").read_text(encoding="utf-8")
+            self.assertIn("## 当前计划", plans)
+            self.assertIn("## 维护规则", plans)
+            self.assertIn("docs/plans/archive-YYYY.md", plans)
             self.assertIn("## 文档入口", (root / "README.md").read_text(encoding="utf-8"))
+            self.assertIn("docs/plans/", (root / "README.md").read_text(encoding="utf-8"))
 
     def test_lite_template_file_set_and_key_content(self) -> None:
         with self.temp_path() as root:
@@ -143,7 +147,10 @@ class BootstrapProjectTests(unittest.TestCase):
             self.assertEqual(skipped, [])
             self.assertEqual(conflicts, [])
             self.assertIn("本文档用于让新的 AI 会话", (root / "PROJECT_CONTEXT.md").read_text(encoding="utf-8"))
-            self.assertIn("## 使用规则", (root / "PLANS.md").read_text(encoding="utf-8"))
+            plans = (root / "PLANS.md").read_text(encoding="utf-8")
+            self.assertIn("## 使用规则", plans)
+            self.assertIn("docs/plans/archive-YYYY.md", plans)
+            self.assertIn("只保留最近 5 条", plans)
             self.assertIn("给后续维护者的提示", (root / "README.md").read_text(encoding="utf-8"))
 
     def test_existing_regular_file_is_skipped_without_overwrite(self) -> None:
@@ -285,6 +292,7 @@ class BootstrapProjectTests(unittest.TestCase):
             code, output = self.capture(bootstrap_project.check, root)
             self.assertEqual(code, 0)
             self.assertIn("check[info] fresh_context PROJECT_CONTEXT.md:", output)
+            self.assertIn("check[info] plans_size PLANS.md:", output)
             self.assertIn("check[info] structure_match PROJECT_CONTEXT.md:", output)
             self.assertIn("check[info] git_ok .git:", output)
             self.assertIn("result: healthy", output)
@@ -380,6 +388,92 @@ class BootstrapProjectTests(unittest.TestCase):
                     self.assertEqual(payload["stale_days"], days)
                     self.assertEqual(any(item["code"] == "stale_context" for item in payload["checks"]), days == 30)
 
+    def test_future_review_date_cannot_bypass_age_check(self) -> None:
+        with self.temp_path() as root:
+            self.create_healthy_docs(root)
+            context = root / "PROJECT_CONTEXT.md"
+            context.write_text(
+                context.read_text(encoding="utf-8").replace(
+                    f"最后整理：{date.today().isoformat()}",
+                    f"最后整理：{(date.today() + timedelta(days=7)).isoformat()}",
+                ), encoding="utf-8",
+            )
+            self.create_repository(root, commit=True)
+            original = context.read_bytes()
+            for level in ("standard", "strict"):
+                for days in (30, 0):
+                    with self.subTest(level=level, stale_days=days):
+                        completed = self.run_cli(
+                            str(root), "--check", "--check-level", level,
+                            "--stale-days", str(days), "--json",
+                        )
+                        payload = json.loads(completed.stdout)
+                        self.assertEqual(completed.returncode, 1, payload)
+                        issues = [(item["code"], item["path"]) for item in payload["checks"] if item["level"] == "issue"]
+                        self.assertEqual(issues, [("future_context_date", "PROJECT_CONTEXT.md")])
+                        self.assertEqual(context.read_bytes(), original)
+            basic = self.run_cli(str(root), "--check", "--check-level", "basic", "--json")
+            self.assertEqual(basic.returncode, 0, basic.stdout)
+
+    def test_check_reports_plans_growth_over_default_limit(self) -> None:
+        with self.temp_path() as root:
+            self.create_healthy_docs(root)
+            plans = root / "PLANS.md"
+            plans.write_text(
+                plans.read_text(encoding="utf-8") + "\n" + "x" * (bootstrap_project.PLANS_MAX_KB * 1024),
+                encoding="utf-8",
+                newline="\n",
+            )
+            self.create_repository(root, commit=True)
+            completed = self.run_cli(str(root), "--check", "--json")
+            self.assertEqual(completed.returncode, 1, completed.stdout)
+            payload = json.loads(completed.stdout)
+            growth = [item for item in payload["checks"] if item["code"] == "plans_growth"]
+            self.assertEqual(len(growth), 1)
+            self.assertEqual(growth[0]["level"], "issue")
+            self.assertEqual(growth[0]["path"], "PLANS.md")
+            self.assertIn("docs/plans/archive-YYYY.md", growth[0]["message"])
+            self.assertNotIn("plans_size", {item["code"] for item in payload["checks"]})
+
+    def test_cli_plans_size_limit_is_configurable_and_disableable(self) -> None:
+        with self.temp_path() as root:
+            self.create_healthy_docs(root)
+            plans = root / "PLANS.md"
+            plans.write_text(
+                plans.read_text(encoding="utf-8") + "\n" + "x" * 4096,
+                encoding="utf-8",
+                newline="\n",
+            )
+            self.create_repository(root, commit=True)
+            for limit, expected_code, expected_check in (
+                (4, 1, "plans_growth"), (64, 0, "plans_size"), (0, 0, "plans_size"),
+            ):
+                with self.subTest(limit=limit):
+                    completed = self.run_cli(str(root), "--check", "--plans-max-kb", str(limit), "--json")
+                    self.assertEqual(completed.returncode, expected_code, completed.stdout)
+                    payload = json.loads(completed.stdout)
+                    self.assertEqual(payload["plans_max_kb"], limit)
+                    self.assertIn(expected_check, {item["code"] for item in payload["checks"]})
+                    if limit == 0:
+                        message = next(item["message"] for item in payload["checks"] if item["code"] == "plans_size")
+                        self.assertIn("size limit disabled", message)
+
+    def test_check_basic_skips_plans_size_check(self) -> None:
+        with self.temp_path() as root:
+            self.create_healthy_docs(root)
+            plans = root / "PLANS.md"
+            plans.write_text(
+                plans.read_text(encoding="utf-8") + "\n" + "x" * (bootstrap_project.PLANS_MAX_KB * 1024),
+                encoding="utf-8",
+                newline="\n",
+            )
+            self.create_repository(root)
+            result = bootstrap_project.check_result(root, level="basic")
+            codes = {item.code for item in result.checks}
+            self.assertNotIn("plans_growth", codes)
+            self.assertNotIn("plans_size", codes)
+            self.assertEqual(result.exit_code, 0)
+
     def test_cli_check_additional_placeholders_preserve_default(self) -> None:
         with self.temp_path() as root:
             self.create_healthy_docs(root)
@@ -409,8 +503,9 @@ class BootstrapProjectTests(unittest.TestCase):
 
     def test_cli_rejects_invalid_check_settings(self) -> None:
         for arguments in (
-            ("--stale-days", "60"), ("--placeholder", "TBD"),
+            ("--stale-days", "60"), ("--placeholder", "TBD"), ("--plans-max-kb", "32"),
             ("--check", "--stale-days", "-1"), ("--check", "--stale-days", "many"),
+            ("--check", "--plans-max-kb", "-1"), ("--check", "--plans-max-kb", "many"),
             ("--check", "--placeholder", " "),
         ):
             with self.subTest(arguments=arguments):
@@ -951,6 +1046,7 @@ class BootstrapProjectTests(unittest.TestCase):
         for arguments in (
             ("--check-lev", "strict"), ("--check-lev=strict",),
             ("--check", "--check-lev", "strict"), ("--check", "--check-lev=strict"),
+            ("--check", "--plans-max-k", "4"),
             ("--repor=audit",),
         ):
             with self.subTest(arguments=arguments), self.temp_path() as root:

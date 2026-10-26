@@ -54,29 +54,46 @@ python scripts/bootstrap_project.py "../demo-project" --check --json
 
 **模板生成后需要填写。** 直接执行脚本会留下“待补充”，因此立即执行默认检查通常会失败。通过 Agent 使用时，应根据实际信息补齐内容，再运行检查；未知信息保留并说明。
 
+## 三份协作文档的分工
+
+| 文档 | 内容与维护方式 |
+| --- | --- |
+| `PLANS.md` | 当前任务保留范围、验收、状态、验证与下一步；未结束任务不随会话或任务切换移入历史 |
+| `PROJECT_CONTEXT.md` | 核实后的稳定事实、实际结构、开发与测试约定；事实变化时修订，长说明保留结论和链接 |
+| `README.md` | 项目简介、通用安装与启动命令、文档导航；上下文链接运行说明，减少重复维护 |
+
+默认与 full 模式使用同一套计划约定，full 额外提供字段示例。计划区初始为空，实际初始化结果由 Agent 核实后填写；简单的一次性修改不强制建正式计划。`受阻` 记录缺失条件，`已暂停` 表示用户明确暂缓，`已完成` 需要满足适用验收条件并有验证结果。
+
+历史区保留最近 5 条已结束记录；更早的按年份迁入 `docs/plans/archive-YYYY.md`，保留结果、关键决定和验证依据。先核对归档再移除主文件条目，主文件每年只留一个链接。细则及审阅方法见 [项目文档约定](references/project-docs.md)。
+
+这些约定在 Agent 读取文档后生效；初始化不会把文档注册为新会话自动加载的指令。已有文件也不会被脚本自动升级，需要按任务进行定点合并。
+
 ## 文档检查
 
 | 级别 | 检查内容 |
 | --- | --- |
 | `basic` | 路径类型、文件可读性与 UTF-8 编码、Git 仓库有效性 |
-| `standard`（默认） | basic，加 Markdown 非空、占位符、整理日期、顶层结构变化和 HEAD 检查 |
+| `standard`（默认） | basic，加 Markdown 非空、占位符、整理日期、顶层结构变化、PLANS.md 体积和 HEAD 检查 |
 | `strict` | standard，加全部文档齐全、结构树可解析、已有提交、工作区干净（含未跟踪文件，不受 Git 显示配置影响）；警告也会阻止通过 |
 
 UTF-8 BOM 可以使用，空的 `.gitignore` 也有效。无效编码会明确报错，不会丢弃字节后继续判定文档健康。有效但尚未提交的仓库在 standard 下产生警告，在 strict 下产生问题。
 
-整理日期支持 `最后整理：YYYY-MM-DD` 或 `Last reviewed: YYYY-MM-DD`。结构检查读取第一个含树形条目的 `text` 代码块，只比较顶层名称；常见构建与依赖目录可以省略。
+整理日期支持 `最后整理：YYYY-MM-DD` 或 `Last reviewed: YYYY-MM-DD`，未来日期会报错。结构检查读取第一个含树形条目的 `text` 代码块，只比较顶层名称；常见构建与依赖目录可以省略。
 
-默认整理日期上限为 30 天，可按项目节奏调整。`0` 关闭过期限制，但仍要求日期可解析。占位符按大小写敏感的字面文本匹配，可以追加多个值；默认“待补充”始终保留。
+默认整理日期上限为 30 天，可按项目节奏调整。`0` 关闭过期限制，但仍要求日期可解析且不在未来；只有实际核实内容后才应更新整理日期。占位符按大小写敏感的字面文本匹配，可以追加多个值；默认“待补充”始终保留。
+
+`PLANS.md` 默认上限 16 KB，超出时报告 `plans_growth`，提示按文件内的保留规则归档较早的已结束记录。体积超限时历史保留数量可少于 5 条；长篇活动计划可以链接到详情文档，当前计划仍保留状态、范围、验收与下一步。脚本不会自动归档。`--plans-max-kb N` 调整上限，`0` 关闭体积限制。
 
 ```bash
 python scripts/bootstrap_project.py "../demo-project" --check --stale-days 90
+python scripts/bootstrap_project.py "../demo-project" --check --plans-max-kb 64
 python scripts/bootstrap_project.py "../demo-project" --check --placeholder TBD --placeholder TODO --json
 python scripts/bootstrap_project.py "../demo-project" --check --check-level strict --stale-days 0
 ```
 
-`--stale-days` 和 `--placeholder` 只适用于检查模式；basic 不执行内容或日期检查。检查结果的 JSON 会记录实际使用的 `stale_days` 和 `placeholders`。
+`--stale-days`、`--plans-max-kb` 和 `--placeholder` 只适用于检查模式；basic 不执行内容、日期或体积检查。检查结果的 JSON 会记录实际使用的 `stale_days`、`plans_max_kb` 和 `placeholders`。
 
-退出码：`0` 通过，`1` 操作失败或存在阻塞项，`2` 参数错误。检查通过只代表满足这些规则；内容是否准确、运行命令是否可用，需要另外验证。
+退出码：`0` 通过，`1` 操作失败或存在阻塞项，`2` 参数错误。检查通过只代表满足自动检查项；五条历史的数量限制、任务状态、验收证据、运行命令和链接需要另行审阅。README 与上下文暂无硬性体积限制，按内容分工和链接控制长度。
 
 ## Git 与已有文件
 

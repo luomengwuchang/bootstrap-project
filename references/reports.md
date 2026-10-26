@@ -38,6 +38,7 @@ Describe credential storage and retrieval without copying the secret value.
 
 The report is a historical snapshot. `PROJECT_CONTEXT.md` and `PLANS.md` remain the living
 project documents; keep ongoing edits there and create fresh reports for later milestones.
+Archive older `PLANS.md` history per the retention rule in that file instead of letting it grow.
 
 Reuse `assets/report-template.html` unless the user requests design changes. The page is
 self-contained and uses system fonts, a light theme, and a dark theme selected automatically
