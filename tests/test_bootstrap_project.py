@@ -55,7 +55,7 @@ class BootstrapProjectTests(unittest.TestCase):
         created, _, _ = self.create_templates(root)
         self.assertEqual(
             set(created),
-            {"PROJECT_CONTEXT.md", "PLANS.md", "README.md", ".gitignore"},
+            {"PROJECT_CONTEXT.md", "PLANS.md", "README.md", "AGENTS.md", ".gitignore"},
         )
         for name in ("PROJECT_CONTEXT.md", "PLANS.md", "README.md"):
             path = root / name
@@ -115,17 +115,20 @@ class BootstrapProjectTests(unittest.TestCase):
             created, skipped, conflicts = self.create_templates(root)
             self.assertEqual(
                 set(created),
-                {"PROJECT_CONTEXT.md", "PLANS.md", "README.md", ".gitignore"},
+                {"PROJECT_CONTEXT.md", "PLANS.md", "README.md", "AGENTS.md", ".gitignore"},
             )
             self.assertEqual(skipped, [])
             self.assertEqual(conflicts, [])
             self.assertIn("## 项目定位", (root / "PROJECT_CONTEXT.md").read_text(encoding="utf-8"))
             plans = (root / "PLANS.md").read_text(encoding="utf-8")
             self.assertIn("## 当前计划", plans)
-            self.assertIn("## 维护规则", plans)
+            self.assertIn("## 规则", plans)
+            self.assertLess(len(plans.encode("utf-8")), 1500)
             self.assertIn("docs/plans/archive-YYYY.md", plans)
             self.assertIn("## 文档入口", (root / "README.md").read_text(encoding="utf-8"))
-            self.assertIn("docs/plans/", (root / "README.md").read_text(encoding="utf-8"))
+            agents = (root / "AGENTS.md").read_text(encoding="utf-8")
+            self.assertIn("PROJECT_CONTEXT.md", agents)
+            self.assertIn("|-- AGENTS.md", (root / "PROJECT_CONTEXT.md").read_text(encoding="utf-8"))
 
     def test_lite_template_file_set_and_key_content(self) -> None:
         with self.temp_path() as root:
@@ -142,15 +145,15 @@ class BootstrapProjectTests(unittest.TestCase):
             created, skipped, conflicts = self.create_templates(root, "full")
             self.assertEqual(
                 set(created),
-                {"PROJECT_CONTEXT.md", "PLANS.md", "README.md", ".gitignore"},
+                {"PROJECT_CONTEXT.md", "PLANS.md", "README.md", "AGENTS.md", ".gitignore"},
             )
             self.assertEqual(skipped, [])
             self.assertEqual(conflicts, [])
             self.assertIn("本文档用于让新的 AI 会话", (root / "PROJECT_CONTEXT.md").read_text(encoding="utf-8"))
             plans = (root / "PLANS.md").read_text(encoding="utf-8")
-            self.assertIn("## 使用规则", plans)
+            self.assertIn("## 条目格式", plans)
             self.assertIn("docs/plans/archive-YYYY.md", plans)
-            self.assertIn("只保留最近 5 条", plans)
+            self.assertIn("历史保留最近 5 条", plans)
             self.assertIn("给后续维护者的提示", (root / "README.md").read_text(encoding="utf-8"))
 
     def test_existing_regular_file_is_skipped_without_overwrite(self) -> None:
@@ -200,59 +203,6 @@ class BootstrapProjectTests(unittest.TestCase):
             _, skipped, conflicts = bootstrap_project.write_missing_files(root, mode="minimal")
             self.assertNotIn("README.md", skipped)
             self.assertIn("README.md", conflicts)
-
-    def test_english_and_chinese_slugify(self) -> None:
-        self.assertEqual(bootstrap_project.slugify("Deploy Handover"), "deploy-handover")
-        self.assertEqual(bootstrap_project.slugify("部署 交接"), "部署-交接")
-        self.assertEqual(bootstrap_project.slugify("---"), "report")
-
-    def test_report_creation_and_same_slug_are_idempotent(self) -> None:
-        with self.temp_path() as root:
-            first_code, first_output = self.capture(
-                bootstrap_project.write_report, root, slug="部署 交接"
-            )
-            second_code, second_output = self.capture(
-                bootstrap_project.write_report, root, slug="部署 交接"
-            )
-            report = root / "docs" / "reports" / f"{date.today().isoformat()}-部署-交接.html"
-            self.assertEqual(first_code, 0)
-            self.assertEqual(second_code, 0)
-            self.assertTrue(report.is_file())
-            self.assertIn("created: docs/reports/", first_output)
-            self.assertIn("skipped: docs/reports/", second_output)
-            html = report.read_text(encoding="utf-8")
-            self.assertNotIn("{{TITLE}}", html)
-            self.assertIn("部署 交接", html)
-
-    def test_report_escapes_html_tokens(self) -> None:
-        with self.temp_path() as root:
-            result = bootstrap_project.write_report_result(root, slug="audit", kind='<b>&"')
-            self.assertEqual(result.exit_code, 0)
-            report = root / "docs" / "reports" / f"{date.today().isoformat()}-audit.html"
-            html = report.read_text(encoding="utf-8")
-            self.assertIn("&lt;b&gt;&amp;&quot;", html)
-            self.assertNotIn("{{TITLE}}", html)
-
-    def test_report_requires_complete_html_shell_and_offline_fonts(self) -> None:
-        template = bootstrap_project.REPORT_TEMPLATE.read_text(encoding="utf-8")
-        self.assertIn("<!doctype html>", template.lower())
-        self.assertIn('<html lang="zh-CN">', template)
-        self.assertIn('<meta charset="utf-8">', template)
-        self.assertIn('<meta name="viewport"', template)
-        self.assertIn("</style>", template)
-        self.assertIn("</head>", template)
-        self.assertIn("<body>", template)
-        self.assertIn("</body>", template)
-        self.assertIn("</html>", template)
-        self.assertNotIn("fonts.googleapis.com", template)
-        self.assertNotIn("fonts.gstatic.com", template)
-
-        with self.temp_path() as root:
-            root.mkdir(parents=True, exist_ok=True)
-            (root / "docs").write_text("conflict", encoding="utf-8")
-            code, output = self.capture(bootstrap_project.write_report, root, slug="audit")
-            self.assertEqual(code, 1)
-            self.assertIn("error: report directory conflicts with a non-directory path", output)
 
     def test_manifest_combines_multiple_stacks_without_duplicate_blocks(self) -> None:
         with self.temp_path() as root:
@@ -354,7 +304,7 @@ class BootstrapProjectTests(unittest.TestCase):
         with self.temp_path() as root:
             self.create_healthy_docs(root)
             context = root / "PROJECT_CONTEXT.md"
-            stale = (date.today() - timedelta(days=31)).isoformat()
+            stale = (date.today() - timedelta(days=bootstrap_project.STALE_DAYS + 1)).isoformat()
             context.write_text(
                 context.read_text(encoding="utf-8").replace(
                     f"最后整理：{date.today().isoformat()}", f"最后整理：{stale}"
@@ -364,8 +314,9 @@ class BootstrapProjectTests(unittest.TestCase):
             )
             self.create_repository(root, commit=True)
             code, output = self.capture(bootstrap_project.check, root)
-            self.assertEqual(code, 1)
-            self.assertIn("check[issue] stale_context PROJECT_CONTEXT.md:", output)
+            self.assertEqual(code, 0)
+            self.assertIn("check[warning] stale_context PROJECT_CONTEXT.md:", output)
+            self.assertIn("result: healthy (1 warning(s))", output)
 
     def test_cli_check_supports_custom_and_disabled_age_limits(self) -> None:
         with self.temp_path() as root:
@@ -520,8 +471,10 @@ class BootstrapProjectTests(unittest.TestCase):
             (root / "extra.txt").write_text("extra", encoding="utf-8")
             self.create_repository(root, commit=True)
             code, output = self.capture(bootstrap_project.check, root)
-            self.assertEqual(code, 1)
-            self.assertIn("check[issue] structure_drift PROJECT_CONTEXT.md:", output)
+            self.assertEqual(code, 0)
+            self.assertIn("check[warning] structure_drift PROJECT_CONTEXT.md:", output)
+            strict = bootstrap_project.check_result(root, level="strict")
+            self.assertEqual(strict.exit_code, 1)
 
     def test_check_reports_no_git_repository(self) -> None:
         with self.temp_path() as root:
@@ -606,8 +559,16 @@ class BootstrapProjectTests(unittest.TestCase):
             child = root / "child"
             self.create_healthy_docs(child)
             missing = bootstrap_project.check_result(child, level="basic")
-            self.assertIn("no_git", {item.code for item in missing.checks})
-            self.assertEqual(bootstrap_project.bootstrap_plan(child, dry_run=True).git, "would-init: git repository")
+            codes = {item.code for item in missing.checks}
+            self.assertIn("parent_git", codes)
+            self.assertNotIn("no_git", codes)
+            self.assertEqual(missing.exit_code, 0)
+            plan = bootstrap_project.bootstrap_plan(child, dry_run=True)
+            self.assertTrue(plan.git.startswith("skipped: inside parent repository"), plan.git)
+            self.assertEqual(
+                bootstrap_project.bootstrap_plan(child, dry_run=True, nested_git=True).git,
+                "would-init: git repository",
+            )
             (child / ".git").mkdir()
             invalid = bootstrap_project.check_result(child, level="basic")
             self.assertIn("git_error", {item.code for item in invalid.checks})
@@ -772,7 +733,7 @@ class BootstrapProjectTests(unittest.TestCase):
                     target = root / "目标项目 with spaces"
                     if layout == "existing":
                         self.create_repository(target)
-                    expected = set(bootstrap_project.DOC_FILES)
+                    expected = set(bootstrap_project.DOC_FILES) | {"AGENTS.md"}
 
                 config = root / "test.gitconfig"
                 self.git(root, "config", "--file", str(config), "commit.gpgsign", "false")
@@ -950,15 +911,15 @@ class BootstrapProjectTests(unittest.TestCase):
     def test_json_results_have_common_contract_fields(self) -> None:
         common = {
             "operation", "target", "mode", "created", "skipped", "conflicts",
-            "git", "commit", "report", "checks", "errors", "exit_code", "dry_run",
+            "git", "commit", "agents", "checks", "errors", "exit_code", "dry_run",
         }
         with self.temp_path() as root:
             bootstrap = bootstrap_project.bootstrap_plan(root / "bootstrap", dry_run=True).as_dict()
-            report = bootstrap_project.report_plan(root / "report", slug="audit", dry_run=True).as_dict()
             check = bootstrap_project.check_result(root / "missing").as_dict()
+            error = bootstrap_project.error_payload("error", "boom", 1)
         self.assertTrue(common <= bootstrap.keys())
-        self.assertTrue(common <= report.keys())
         self.assertTrue(common <= check.keys())
+        self.assertTrue(common <= error.keys())
 
     def test_json_argument_error_is_one_parseable_object(self) -> None:
         completed = self.run_cli("--check", "--commit", "--json")
@@ -998,28 +959,9 @@ class BootstrapProjectTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0)
             payload = json.loads(completed.stdout)
             self.assertEqual(payload["dry_run"], True)
-            self.assertEqual(payload["created"], ["PROJECT_CONTEXT.md", "PLANS.md", "README.md", ".gitignore"])
+            self.assertEqual(payload["created"], ["PROJECT_CONTEXT.md", "PLANS.md", "README.md", "AGENTS.md", ".gitignore"])
             self.assertEqual(payload["git"], "would-init: git repository")
             self.assertEqual(payload["commit"], "would-commit: generated files")
-            self.assertFalse(target.exists())
-
-    def test_dry_run_report_detects_report_directory_conflict(self) -> None:
-        with self.temp_path() as root:
-            (root / "docs").write_text("conflict", encoding="utf-8")
-            completed = self.run_cli(str(root), "--report=audit", "--dry-run", "--json")
-            self.assertEqual(completed.returncode, 1)
-            payload = json.loads(completed.stdout)
-            self.assertEqual(payload["conflicts"], ["docs"])
-            self.assertEqual((root / "docs").read_text(encoding="utf-8"), "conflict")
-
-    def test_dry_run_report_has_no_side_effects(self) -> None:
-        with self.temp_path() as root:
-            target = root / "new-project"
-            completed = self.run_cli(str(target), "--report=audit", "--dry-run", "--json")
-            self.assertEqual(completed.returncode, 0)
-            payload = json.loads(completed.stdout)
-            self.assertEqual(payload["dry_run"], True)
-            self.assertEqual(payload["created"], ["docs/reports/" + date.today().isoformat() + "-audit.html"])
             self.assertFalse(target.exists())
 
     def test_check_rejects_symlink_target(self) -> None:
@@ -1047,7 +989,7 @@ class BootstrapProjectTests(unittest.TestCase):
             ("--check-lev", "strict"), ("--check-lev=strict",),
             ("--check", "--check-lev", "strict"), ("--check", "--check-lev=strict"),
             ("--check", "--plans-max-k", "4"),
-            ("--repor=audit",),
+            ("--nested-gi",),
         ):
             with self.subTest(arguments=arguments), self.temp_path() as root:
                 target = root / "new-project"
@@ -1061,31 +1003,6 @@ class BootstrapProjectTests(unittest.TestCase):
                 self.assertEqual(completed.stderr, "")
                 self.assertFalse(target.exists())
 
-    def test_cli_rejects_conflicting_operations(self) -> None:
-        completed = self.run_cli("--check", "--report", "audit", "--json")
-        self.assertEqual(completed.returncode, 2)
-        self.assertIn("mutually exclusive operations", json.loads(completed.stdout)["errors"][0])
-
-    def test_cli_rejects_report_with_initialization_flags(self) -> None:
-        for flag in ("--full", "--lite", "--commit"):
-            with self.subTest(flag=flag):
-                completed = self.run_cli("--report", "audit", flag, "--json")
-                self.assertEqual(completed.returncode, 2)
-                self.assertIn("only valid for initialization", json.loads(completed.stdout)["errors"][0])
-
-    def test_cli_requires_explicit_current_directory_report_slug(self) -> None:
-        completed = self.run_cli("--report", "audit", "--json")
-        self.assertEqual(completed.returncode, 2)
-        self.assertIn("ambiguous report syntax", json.loads(completed.stdout)["errors"][0])
-
-    def test_cli_accepts_report_slug_with_explicit_target(self) -> None:
-        with self.temp_path() as root:
-            completed = self.run_cli(str(root), "--report", "audit", "--json")
-            self.assertEqual(completed.returncode, 0, completed.stdout)
-            payload = json.loads(completed.stdout)
-            self.assertEqual(payload["operation"], "report")
-            self.assertTrue((root / payload["report"]).is_file())
-
     def test_cli_lite_upgrade_preserves_existing_docs_and_source(self) -> None:
         with self.temp_path() as root:
             source = root / "main.py"
@@ -1097,7 +1014,7 @@ class BootstrapProjectTests(unittest.TestCase):
             before = {name: (root / name).read_bytes() for name in ("README.md", ".gitignore", "main.py")}
             second = self.run_cli(str(root), "--json")
             self.assertEqual(second.returncode, 0, second.stdout)
-            self.assertEqual(set(json.loads(second.stdout)["created"]), {"PROJECT_CONTEXT.md", "PLANS.md"})
+            self.assertEqual(set(json.loads(second.stdout)["created"]), {"PROJECT_CONTEXT.md", "PLANS.md", "AGENTS.md"})
             for name, content in before.items():
                 self.assertEqual((root / name).read_bytes(), content)
             third = self.run_cli(str(root), "--json")
@@ -1206,10 +1123,73 @@ class BootstrapProjectTests(unittest.TestCase):
             payload = json.loads(output)
             self.assertEqual(code, 1)
             self.assertEqual(payload["exit_code"], 1)
-            self.assertEqual(set(payload["created"]), {"PROJECT_CONTEXT.md", "README.md", ".gitignore"})
+            self.assertEqual(set(payload["created"]), {"PROJECT_CONTEXT.md", "README.md", "AGENTS.md", ".gitignore"})
             self.assertTrue(all((root / name).is_file() for name in payload["created"]))
             self.assertFalse((root / "PLANS.md").exists())
             self.assertTrue(any("PLANS.md" in conflict for conflict in payload["conflicts"]))
+
+    def test_existing_agents_md_gets_pointer_only_with_flag(self) -> None:
+        with self.temp_path() as root:
+            agents = root / "AGENTS.md"
+            agents.write_text("# Rules\nuse tabs", encoding="utf-8")
+            first = bootstrap_project.bootstrap_result(root)
+            self.assertIn("AGENTS.md", first.skipped)
+            self.assertTrue(first.agents.startswith("hint:"), first.agents)
+            self.assertEqual(agents.read_text(encoding="utf-8"), "# Rules\nuse tabs")
+            dry = bootstrap_project.bootstrap_result(root, agents_md=True, dry_run=True)
+            self.assertEqual(dry.agents, "would-append: AGENTS.md")
+            self.assertEqual(agents.read_text(encoding="utf-8"), "# Rules\nuse tabs")
+            second = bootstrap_project.bootstrap_result(root, agents_md=True)
+            self.assertEqual(second.agents, "appended: AGENTS.md")
+            text = agents.read_text(encoding="utf-8")
+            self.assertTrue(text.startswith("# Rules\nuse tabs\n"))
+            self.assertIn("PROJECT_CONTEXT.md", text)
+            third = bootstrap_project.bootstrap_result(root, agents_md=True)
+            self.assertTrue(third.agents.startswith("ok:"), third.agents)
+            self.assertEqual(agents.read_text(encoding="utf-8"), text)
+
+    def test_other_entry_file_prevents_second_agents_md(self) -> None:
+        with self.temp_path() as root:
+            (root / "GEMINI.md").write_text("see PROJECT_CONTEXT.md\n", encoding="utf-8")
+            result = bootstrap_project.bootstrap_result(root)
+            self.assertNotIn("AGENTS.md", result.created)
+            self.assertFalse((root / "AGENTS.md").exists())
+            self.assertTrue(result.agents.startswith("ok: GEMINI.md"), result.agents)
+
+    def test_check_warns_when_no_entry_file_points_to_docs(self) -> None:
+        with self.temp_path() as root:
+            self.create_healthy_docs(root)
+            (root / "AGENTS.md").write_text("# unrelated\n", encoding="utf-8")
+            self.create_repository(root, commit=True)
+            standard = bootstrap_project.check_result(root)
+            warning = [item for item in standard.checks if item.code == "agent_entry_missing"]
+            self.assertEqual(len(warning), 1)
+            self.assertEqual(warning[0].level, "warning")
+            self.assertEqual(standard.exit_code, 0)
+            basic = bootstrap_project.check_result(root, level="basic")
+            self.assertNotIn("agent_entry_missing", {item.code for item in basic.checks})
+
+    def test_parent_repository_skips_init_and_commit(self) -> None:
+        with self.temp_path() as root:
+            self.create_repository(root, commit=True)
+            child = root / "child"
+            completed = self.run_cli(str(child), "--commit", "--json")
+            payload = json.loads(completed.stdout)
+            self.assertEqual(completed.returncode, 1, payload)
+            self.assertFalse((child / ".git").exists())
+            self.assertTrue((child / "README.md").is_file())
+            self.assertTrue(payload["git"].startswith("skipped: inside parent repository"))
+            self.assertTrue(payload["commit"].startswith("skipped:"))
+            nested = self.run_cli(str(root / "nested"), "--nested-git", "--json")
+            self.assertEqual(nested.returncode, 0, nested.stdout)
+            self.assertTrue((root / "nested" / ".git").is_dir())
+
+    def test_cli_rejects_misplaced_new_flags(self) -> None:
+        for arguments in (("--check", "--nested-git"), ("--check", "--agents-md"), ("--lite", "--agents-md")):
+            with self.subTest(arguments=arguments):
+                completed = self.run_cli(*arguments, "--json")
+                self.assertEqual(completed.returncode, 2, completed.stdout)
+                self.assertEqual(json.loads(completed.stdout)["exit_code"], 2)
 
 
 if __name__ == "__main__":
